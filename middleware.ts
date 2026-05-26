@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTokenFromRequest, verifyToken } from '@/lib/auth';
+import { getTokenFromRequest, verifyTokenEdge } from '@/lib/auth-edge';
 
 const PUBLIC_PATHS = ['/login', '/api/auth/login'];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
@@ -12,14 +12,14 @@ export function middleware(request: NextRequest) {
 
   if (pathname.startsWith('/api/')) {
     const token = getTokenFromRequest(request);
-    if (!token || !verifyToken(token)) {
+    if (!token || !(await verifyTokenEdge(token))) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
     return NextResponse.next();
   }
 
   const token = getTokenFromRequest(request);
-  if (!token || !verifyToken(token)) {
+  if (!token || !(await verifyTokenEdge(token))) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
