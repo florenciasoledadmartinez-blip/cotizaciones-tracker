@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signToken, cookieOptions } from '@/lib/auth';
-import getDb from '@/lib/db';
+import { qOne } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
 export async function POST(request: NextRequest) {
@@ -10,8 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email y contraseña requeridos' }, { status: 400 });
     }
 
-    const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE email=? AND active=1').get(email) as any;
+    const user = await qOne('SELECT * FROM users WHERE email=$1 AND active=1', [email]);
 
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
