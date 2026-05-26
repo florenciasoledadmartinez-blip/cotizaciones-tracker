@@ -15,11 +15,12 @@ export function getTokenFromRequest(req: NextRequest): string | null {
   return req.cookies.get(COOKIE_NAME)?.value ?? null;
 }
 
-function base64urlDecode(str: string): Uint8Array {
+function base64urlDecode(str: string): Uint8Array<ArrayBuffer> {
   const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
   const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
