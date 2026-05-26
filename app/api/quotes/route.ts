@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     await generateQuoteTasks(id);
     await updateQuoteProgress(id);
-    await logActivity(id, user.userId, 'Cotización creada', 'status', null, status);
+    await logActivity(id, user.userId, 'Cotización creada', 'status', undefined, status);
 
     const created = await qOne('SELECT * FROM quotes WHERE id=$1', [id]);
     return NextResponse.json({ quote: created }, { status: 201 });
