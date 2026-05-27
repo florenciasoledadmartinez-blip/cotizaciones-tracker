@@ -47,6 +47,7 @@ export default function ChecklistPanel({
   const [obsOpen, setObsOpen] = useState<number | null>(null);
   const [obsText, setObsText] = useState('');
   const [updating, setUpdating] = useState<number | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   // Sync local state when parent refreshes data from server
   useEffect(() => {
@@ -72,6 +73,7 @@ export default function ChecklistPanel({
     );
 
     setUpdating(subtaskId);
+    setUpdateError(null);
     try {
       const res = await fetch(`/api/quotes/${quoteId}/subtasks`, {
         method: 'PATCH',
@@ -80,19 +82,23 @@ export default function ChecklistPanel({
       });
 
       if (!res.ok) {
-        // Revert optimistic update on error
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.error || `Error ${res.status} al actualizar subtarea`;
+        setUpdateError(msg);
+        // Revert optimistic update
         setLocalTasks(tasks);
         return;
       }
 
+      setUpdateError(null);
       // Refresh server data (re-fetches the quote including updated progress)
       if (onRefresh) {
         onRefresh();
       } else {
         startTransition(() => router.refresh());
       }
-    } catch {
-      // Revert on network error
+    } catch (e: any) {
+      setUpdateError('Error de red al actualizar. Verificá tu conexión.');
       setLocalTasks(tasks);
     } finally {
       setUpdating(null);
@@ -113,6 +119,21 @@ export default function ChecklistPanel({
 
   return (
     <div className="space-y-4">
+      {/* Error banner */}
+      {updateError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
+          <p className="text-sm text-red-700">❌ {updateError}</p>
+          <button onClick={() => setUpdateError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0 text-lg leading-none">×</button>
+        </div>
+      )}
+
+      {/* Read-only notice if canEdit is false */}
+      {!canEdit && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm text-amber-700">
+          👁 Vista de solo lectura — iniciá sesión con tu cuenta asignada para marcar tareas
+        </div>
+      )}
+
       {/* Overall progress */}
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">

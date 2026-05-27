@@ -2,30 +2,27 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import ChecklistPanel from '@/components/quotes/ChecklistPanel';
-import QuoteForm from '@/components/quotes/QuoteForm';
-import Modal from '@/components/ui/Modal';
 import ProgressBar from '@/components/ui/ProgressBar';
 import { formatDate, formatDateTime, STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/lib/utils';
-
-const STATUSES = ['pending_assignment','assigned','in_progress','in_review','sent','expired','cancelled','closed'];
 
 export default function QuoteDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const [quote, setQuote] = useState<any>(null);
-  const [users, setUsers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [showEdit, setShowEdit] = useState(false);
   const [activeTab, setActiveTab] = useState<'checklist' | 'history' | 'ai'>('checklist');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
-  const [statusChanging, setStatusChanging] = useState(false);
   const [generatingTasks, setGeneratingTasks] = useState(false);
 
+  // Load current user first — canEdit depends on it
   useEffect(() => {
-    fetch('/api/auth/me').then(r => r.json()).then(d => setCurrentUser(d.user));
-    fetch('/api/users').then(r => r.json()).then(d => setUsers((d.users ?? []).filter((u:any) => u.role === 'operator')));
+    fetch('/api/auth/me')
+      .then(r => r.json())
+      .then(d => { setCurrentUser(d.user ?? null); setUserLoading(false); })
+      .catch(() => setUserLoading(false));
   }, []);
 
   const fetchQuote = useCallback(async () => {
@@ -41,28 +38,24 @@ export default function QuoteDetailPage() {
 
   useEffect(() => { fetchQuote(); }, [fetchQuote]);
 
-  const canEdit = currentUser && (
+  // Wait for BOTH quote AND currentUser before computing canEdit
+  // This prevents the race condition where canEdit=false on initial render
+  const isReady = !loading && !userLoading;
+  const canEdit = isReady && !!currentUser && (
     currentUser.role === 'admin' ||
     currentUser.role === 'leader' ||
     (currentUser.role === 'operator' && quote?.assigned_user_id === currentUser.userId)
   );
-  const isLeader = currentUser?.role === 'admin' || currentUser?.role === 'leader';
-
-  async function handleStatusChange(newStatus: string) {
-    setStatusChanging(true);
-    await fetch(`/api/quotes/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    fetchQuote();
-    setStatusChanging(false);
-  }
+  const isLeader = !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'leader');
 
   async function handleGenerateTasks() {
     setGeneratingTasks(true);
     const res = await fetch(`/api/quotes/${id}/tasks`, { method: 'POST' });
     if (res.ok) fetchQuote();
+    else {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || 'Error al generar checklist');
+    }
     setGeneratingTasks(false);
   }
 
@@ -74,7 +67,7 @@ export default function QuoteDetailPage() {
     setAiLoading(false);
   }
 
-  if (loading) {
+  if (loading || userLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -97,20 +90,10 @@ export default function QuoteDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900">{quote.quote_number}</h1>
           <p className="text-gray-600">{quote.client_name}</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {isLeader && (
-            <select value={quote.status} onChange={e => handleStatusChange(e.target.value)}
-              disabled={statusChanging}
-              className={`input w-48 text-sm font-medium ${STATUS_COLORS[quote.status]}`}>
-              {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-            </select>
-          )}
-          {canEdit && (
-            <button onClick={() => setShowEdit(true)} className="btn-secondary">
-              Editar
-            </button>
-          )}
-        </div>
+        {/* Status badge — read only. No status dropdown; data comes from Excel */}
+        <span className={`inline-flex px-3 py-1.5 rounded-full text-sm font-medium ${STATUS_COLORS[quote.status]}`}>
+          {STATUS_LABELS[quote.status]}
+        </span>
       </div>
 
       {/* Info cards */}
@@ -132,7 +115,6 @@ export default function QuoteDetailPage() {
           <p className={`text-sm font-semibold ${quote.status === 'expired' ? 'text-red-600' : 'text-gray-800'}`}>
             {formatDate(quote.deadline_date)}
           </p>
-          {quote.estimated_send_date && <p className="text-xs text-gray-400">Est: {formatDate(quote.estimated_send_date)}</p>}
         </div>
         <div className="card p-4">
           <p className="text-xs text-gray-500 uppercase font-medium mb-1">Responsable</p>
@@ -160,14 +142,16 @@ export default function QuoteDetailPage() {
           </div>
         </div>
 
-        {/* Info */}
+        {/* Info — read only, synced from Excel */}
         <div className="card p-5 lg:col-span-2">
-          <h3 className="font-semibold text-gray-800 mb-3">Datos de la cotización</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-800">Datos de la cotización</h3>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">📥 Desde Excel</span>
+          </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             {[
               ['Tipo', quote.quote_type || '—'],
               ['Fecha recepción', formatDate(quote.received_date)],
-              ['Fecha estimada envío', formatDate(quote.estimated_send_date)],
               ['Fecha real de envío', quote.actual_send_date ? formatDate(quote.actual_send_date) : '—'],
               ['Creada por', quote.created_by_name || '—'],
               ['Última actualización', formatDateTime(quote.updated_at)],
@@ -216,7 +200,7 @@ export default function QuoteDetailPage() {
               </div>
               <p className="text-gray-600 font-medium mb-1">Esta cotización no tiene checklist de tareas</p>
               <p className="text-sm text-gray-400 mb-5">
-                Las cotizaciones importadas desde Excel con estado final (enviada, cerrada, cancelada) no generan checklist automáticamente.
+                Las cotizaciones importadas con estado final (enviada, cerrada, cancelada) no generan checklist automáticamente.
               </p>
               {isLeader && (
                 <button
@@ -238,7 +222,7 @@ export default function QuoteDetailPage() {
               quoteId={quote.id}
               tasks={quote.tasks ?? []}
               quoteStatus={quote.status}
-              canEdit={!!canEdit}
+              canEdit={canEdit}
               onRefresh={fetchQuote}
               currentUserName={currentUser?.name}
             />
@@ -279,9 +263,7 @@ export default function QuoteDetailPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="font-semibold text-gray-800">Análisis inteligente</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {process.env.ANTHROPIC_API_KEY ? 'Powered by Claude' : 'Análisis basado en reglas (sin API key configurada)'}
-                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Análisis basado en el estado actual de la cotización</p>
                 </div>
                 <button onClick={generateAI} disabled={aiLoading} className="btn-primary btn-sm">
                   {aiLoading ? 'Analizando...' : aiResult ? '↻ Actualizar análisis' : '✦ Generar análisis'}
@@ -304,23 +286,13 @@ export default function QuoteDetailPage() {
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-400">
-                  <p className="text-sm">Hacé clic en "Generar análisis" para obtener un resumen inteligente del estado de esta cotización.</p>
+                  <p className="text-sm">Hacé clic en "Generar análisis" para obtener un resumen inteligente de esta cotización.</p>
                 </div>
               )}
             </div>
           </div>
         )}
       </div>
-
-      {/* Edit Modal */}
-      <Modal isOpen={showEdit} onClose={() => setShowEdit(false)} title="Editar cotización" size="lg">
-        <QuoteForm
-          users={users}
-          initialData={quote}
-          onSuccess={() => { setShowEdit(false); fetchQuote(); }}
-          onCancel={() => setShowEdit(false)}
-        />
-      </Modal>
     </div>
   );
 }
