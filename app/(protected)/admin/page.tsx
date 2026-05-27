@@ -24,7 +24,7 @@ export default function AdminPage() {
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => {
       setCurrentUser(d.user);
-      if (d.user?.role !== 'admin') router.push('/dashboard');
+      if (d.user?.role !== 'admin' && d.user?.role !== 'leader') router.push('/dashboard');
     });
     loadData();
   }, []);
@@ -81,7 +81,7 @@ export default function AdminPage() {
     loadData();
   }
 
-  const ROLE_LABELS: Record<string,string> = { admin:'Administrador', leader:'Líder', operator:'Operativo' };
+  const ROLE_LABELS: Record<string,string> = { admin:'Administrador', leader:'Administrador', operator:'Operativo' };
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -128,8 +128,7 @@ export default function AdminPage() {
                     <td className="px-4 py-3 text-gray-500">{u.email}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium
-                        ${u.role === 'admin' ? 'bg-red-100 text-red-700' :
-                          u.role === 'leader' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        ${u.role === 'admin' || u.role === 'leader' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                         {ROLE_LABELS[u.role]}
                       </span>
                     </td>
@@ -207,7 +206,6 @@ export default function AdminPage() {
             <label className="label">Rol</label>
             <select className="input" value={uRole} onChange={e => setURole(e.target.value)}>
               <option value="operator">Operativo</option>
-              <option value="leader">Líder</option>
               <option value="admin">Administrador</option>
             </select>
           </div>

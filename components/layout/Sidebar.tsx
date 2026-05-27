@@ -9,7 +9,7 @@ interface SidebarProps {
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrador',
-  leader: 'Líder de área',
+  leader: 'Administrador',
   operator: 'Operativo',
 };
 
@@ -21,7 +21,7 @@ export default function Sidebar({ user }: SidebarProps) {
     { href: '/dashboard', label: 'Dashboard', icon: '◈', roles: ['admin', 'leader'] },
     { href: '/quotes', label: 'Cotizaciones', icon: '◉', roles: ['admin', 'leader', 'operator'] },
     { href: '/gantt', label: 'Línea de tiempo', icon: '▤', roles: ['admin', 'leader'] },
-    { href: '/admin', label: 'Administración', icon: '◆', roles: ['admin'] },
+    { href: '/admin', label: 'Administración', icon: '◆', roles: ['admin', 'leader'] },
   ].filter(l => l.roles.includes(user.role));
 
   async function handleLogout() {
