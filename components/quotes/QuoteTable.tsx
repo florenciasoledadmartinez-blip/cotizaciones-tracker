@@ -28,17 +28,27 @@ interface QuoteTableProps {
 }
 
 export default function QuoteTable({ quotes, onEdit, onDelete, canEdit }: QuoteTableProps) {
-  const [sortKey, setSortKey] = useState<string>('deadline_date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // Default: más nueva primero (received_date descendente)
+  const [sortKey, setSortKey] = useState<string>('received_date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   function handleSort(key: string) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
+    // Fechas y número: la primera vez que se clickea, baja (desc = más nuevo primero)
+    else { setSortKey(key); setSortDir(['received_date','deadline_date','quote_number'].includes(key) ? 'desc' : 'asc'); }
   }
 
   const sorted = [...quotes].sort((a: any, b: any) => {
-    const av = a[sortKey] ?? '';
-    const bv = b[sortKey] ?? '';
+    let av = a[sortKey] ?? '';
+    let bv = b[sortKey] ?? '';
+    // Comparar quote_number como número entero
+    if (sortKey === 'quote_number') {
+      const an = parseInt(av, 10);
+      const bn = parseInt(bv, 10);
+      if (!isNaN(an) && !isNaN(bn)) {
+        return sortDir === 'asc' ? an - bn : bn - an;
+      }
+    }
     return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
   });
 
