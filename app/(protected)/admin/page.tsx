@@ -8,7 +8,9 @@ export default function AdminPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [tab, setTab] = useState<'users' | 'templates'>('users');
+  const [tab, setTab] = useState<'users' | 'templates' | 'maintenance'>('users');
+  const [fixLoading, setFixLoading] = useState(false);
+  const [fixResult, setFixResult] = useState<any>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +78,20 @@ export default function AdminPage() {
     loadData();
   }
 
+  async function handleFixSubtasks() {
+    setFixLoading(true);
+    setFixResult(null);
+    try {
+      const res = await fetch('/api/admin/fix-subtasks', { method: 'POST' });
+      const data = await res.json();
+      setFixResult(data);
+    } catch (e: any) {
+      setFixResult({ error: e.message });
+    } finally {
+      setFixLoading(false);
+    }
+  }
+
   async function toggleTemplate(t: any) {
     await fetch('/api/task-templates', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id, active: !t.active }) });
     loadData();
@@ -98,7 +114,7 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
-        {[['users','Usuarios'],['templates','Tareas y Subtareas']].map(([k,l]) => (
+        {[['users','Usuarios'],['templates','Tareas y Subtareas'],['maintenance','Mantenimiento']].map(([k,l]) => (
           <button key={k} onClick={() => setTab(k as any)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
               ${tab === k ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
@@ -182,6 +198,48 @@ export default function AdminPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'maintenance' && (
+        <div className="space-y-4 max-w-xl">
+          <div className="card p-6">
+            <h3 className="font-semibold text-gray-800 mb-1">Reparar subtareas faltantes</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              En la importación inicial las subtareas no se crearon por un límite de PostgreSQL.
+              Este botón detecta todas las cotizaciones con tareas pero sin subtareas, y las regenera
+              de una vez. Es seguro ejecutarlo múltiples veces — solo toca las que realmente
+              están incompletas.
+            </p>
+            <button
+              onClick={handleFixSubtasks}
+              disabled={fixLoading}
+              className="btn-primary"
+            >
+              {fixLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Reparando... (puede tardar ~30 seg)
+                </span>
+              ) : '🔧 Reparar subtareas de todas las cotizaciones'}
+            </button>
+
+            {fixResult && (
+              <div className={`mt-4 rounded-lg p-4 text-sm ${fixResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                {fixResult.error ? (
+                  <p>❌ {fixResult.error}</p>
+                ) : (
+                  <>
+                    <p className="font-semibold mb-1">✅ {fixResult.message}</p>
+                    <p>{fixResult.fixed} cotizaciones reparadas</p>
+                    {fixResult.fixed === 0 && (
+                      <p className="text-green-600 mt-1">Todas las cotizaciones ya tienen sus subtareas completas.</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -189,45 +189,61 @@ export default function QuoteDetailPage() {
           ))}
         </div>
 
-        {activeTab === 'checklist' && (
-          (quote.tasks ?? []).length === 0 ? (
-            <div className="card p-10 text-center">
-              <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
+        {activeTab === 'checklist' && (() => {
+          const tasks = quote.tasks ?? [];
+          // Orphaned = tasks exist but NONE have subtasks (failed bulk import)
+          const hasOrphanedTasks = tasks.length > 0 &&
+            tasks.every((t: any) => (t.subtasks?.length ?? 0) === 0);
+          const noTasks = tasks.length === 0;
+
+          if (noTasks || hasOrphanedTasks) {
+            return (
+              <div className="card p-10 text-center">
+                <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <p className="text-gray-600 font-medium mb-1">
+                  {hasOrphanedTasks
+                    ? 'Esta cotización tiene tareas pero le faltan las subtareas'
+                    : 'Esta cotización no tiene checklist de tareas'}
+                </p>
+                <p className="text-sm text-gray-400 mb-5">
+                  {hasOrphanedTasks
+                    ? 'Hacé clic en el botón para regenerar el checklist completo.'
+                    : 'Las cotizaciones con estado final no generan checklist automáticamente.'}
+                </p>
+                {isLeader && (
+                  <button
+                    onClick={handleGenerateTasks}
+                    disabled={generatingTasks}
+                    className="btn-primary"
+                  >
+                    {generatingTasks ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Generando...
+                      </span>
+                    ) : hasOrphanedTasks ? '↻ Regenerar checklist' : '✦ Generar checklist de tareas'}
+                  </button>
+                )}
               </div>
-              <p className="text-gray-600 font-medium mb-1">Esta cotización no tiene checklist de tareas</p>
-              <p className="text-sm text-gray-400 mb-5">
-                Las cotizaciones importadas con estado final (enviada, cerrada, cancelada) no generan checklist automáticamente.
-              </p>
-              {isLeader && (
-                <button
-                  onClick={handleGenerateTasks}
-                  disabled={generatingTasks}
-                  className="btn-primary"
-                >
-                  {generatingTasks ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Generando...
-                    </span>
-                  ) : '✦ Generar checklist de tareas'}
-                </button>
-              )}
-            </div>
-          ) : (
+            );
+          }
+
+          return (
             <ChecklistPanel
               quoteId={quote.id}
-              tasks={quote.tasks ?? []}
+              tasks={tasks}
               quoteStatus={quote.status}
               canEdit={canEdit}
               onRefresh={fetchQuote}
               currentUserName={currentUser?.name}
             />
-          )
-        )}
+          );
+        })()}
 
         {activeTab === 'history' && (
           <div className="card overflow-hidden">
