@@ -21,6 +21,7 @@ export default function QuoteDetailPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
   const [statusChanging, setStatusChanging] = useState(false);
+  const [generatingTasks, setGeneratingTasks] = useState(false);
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => setCurrentUser(d.user));
@@ -56,6 +57,13 @@ export default function QuoteDetailPage() {
     });
     fetchQuote();
     setStatusChanging(false);
+  }
+
+  async function handleGenerateTasks() {
+    setGeneratingTasks(true);
+    const res = await fetch(`/api/quotes/${id}/tasks`, { method: 'POST' });
+    if (res.ok) fetchQuote();
+    setGeneratingTasks(false);
   }
 
   async function generateAI() {
@@ -198,14 +206,43 @@ export default function QuoteDetailPage() {
         </div>
 
         {activeTab === 'checklist' && (
-          <ChecklistPanel
-            quoteId={quote.id}
-            tasks={quote.tasks ?? []}
-            quoteStatus={quote.status}
-            canEdit={!!canEdit}
-            onRefresh={fetchQuote}
-            currentUserName={currentUser?.name}
-          />
+          (quote.tasks ?? []).length === 0 ? (
+            <div className="card p-10 text-center">
+              <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <p className="text-gray-600 font-medium mb-1">Esta cotización no tiene checklist de tareas</p>
+              <p className="text-sm text-gray-400 mb-5">
+                Las cotizaciones importadas desde Excel con estado final (enviada, cerrada, cancelada) no generan checklist automáticamente.
+              </p>
+              {isLeader && (
+                <button
+                  onClick={handleGenerateTasks}
+                  disabled={generatingTasks}
+                  className="btn-primary"
+                >
+                  {generatingTasks ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Generando...
+                    </span>
+                  ) : '✦ Generar checklist de tareas'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <ChecklistPanel
+              quoteId={quote.id}
+              tasks={quote.tasks ?? []}
+              quoteStatus={quote.status}
+              canEdit={!!canEdit}
+              onRefresh={fetchQuote}
+              currentUserName={currentUser?.name}
+            />
+          )
         )}
 
         {activeTab === 'history' && (

@@ -28,8 +28,8 @@ interface QuoteTableProps {
 }
 
 export default function QuoteTable({ quotes, onEdit, onDelete, canEdit }: QuoteTableProps) {
-  // Default: más nueva primero (received_date descendente)
-  const [sortKey, setSortKey] = useState<string>('received_date');
+  // Default: número más alto primero (= cotización más reciente)
+  const [sortKey, setSortKey] = useState<string>('quote_number');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   function handleSort(key: string) {
