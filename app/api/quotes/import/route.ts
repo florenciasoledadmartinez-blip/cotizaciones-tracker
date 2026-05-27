@@ -20,6 +20,17 @@ export async function POST(request: NextRequest) {
 
     // ── Optional: delete demo quotes (COT-XXXX format) ──────────────────────
     if (clearDemo) {
+      // Delete dependent records first (activity_log and ai_insights lack ON DELETE CASCADE)
+      await qRun(`
+        DELETE FROM activity_log WHERE quote_id IN (
+          SELECT id FROM quotes WHERE quote_number LIKE 'COT-%'
+        )
+      `);
+      await qRun(`
+        DELETE FROM ai_insights WHERE quote_id IN (
+          SELECT id FROM quotes WHERE quote_number LIKE 'COT-%'
+        )
+      `);
       await qRun(`DELETE FROM quotes WHERE quote_number LIKE 'COT-%'`);
     }
 
