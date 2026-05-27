@@ -1,5 +1,5 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import ProgressBar from '@/components/ui/ProgressBar';
 
@@ -24,25 +24,76 @@ interface ChecklistPanelProps {
   tasks: Task[];
   quoteStatus: string;
   canEdit: boolean;
+  onRefresh?: () => void;
+  currentUserName?: string;
 }
 
-export default function ChecklistPanel({ quoteId, tasks, quoteStatus, canEdit }: ChecklistPanelProps) {
+function calcTaskProgress(subtasks: Subtask[]): number {
+  const applicable = subtasks.filter(s => s.status !== 'not_applicable');
+  if (applicable.length === 0) return 0;
+  const done = subtasks.filter(s => s.status === 'done');
+  return Math.round((done.length / applicable.length) * 100);
+}
+
+export default function ChecklistPanel({
+  quoteId, tasks, quoteStatus, canEdit, onRefresh, currentUserName,
+}: ChecklistPanelProps) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+
+  // Local state for optimistic updates
+  const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set(tasks.map(t => t.id)));
   const [obsOpen, setObsOpen] = useState<number | null>(null);
   const [obsText, setObsText] = useState('');
   const [updating, setUpdating] = useState<number | null>(null);
 
-  async function updateSubtask(subtaskId: number, status: string, observations?: string) {
+  // Sync local state when parent refreshes data from server
+  useEffect(() => {
+    setLocalTasks(tasks);
+  }, [tasks]);
+
+  async function updateSubtask(subtaskId: number, newStatus: string, observations?: string) {
+    // ---- Optimistic update: reflect change in UI immediately ----
+    setLocalTasks(prev =>
+      prev.map(task => {
+        const newSubtasks = task.subtasks.map(sub => {
+          if (sub.id !== subtaskId) return sub;
+          return {
+            ...sub,
+            status: newStatus as Subtask['status'],
+            completed_by_name: newStatus === 'done' ? (currentUserName ?? '') : undefined,
+            completed_at: newStatus === 'done' ? new Date().toISOString() : undefined,
+            observations: observations !== undefined ? observations : sub.observations,
+          };
+        });
+        return { ...task, subtasks: newSubtasks, progress_percentage: calcTaskProgress(newSubtasks) };
+      })
+    );
+
     setUpdating(subtaskId);
     try {
-      await fetch(`/api/quotes/${quoteId}/subtasks`, {
+      const res = await fetch(`/api/quotes/${quoteId}/subtasks`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtask_id: subtaskId, status, observations }),
+        body: JSON.stringify({ subtask_id: subtaskId, status: newStatus, observations }),
       });
-      startTransition(() => router.refresh());
+
+      if (!res.ok) {
+        // Revert optimistic update on error
+        setLocalTasks(tasks);
+        return;
+      }
+
+      // Refresh server data (re-fetches the quote including updated progress)
+      if (onRefresh) {
+        onRefresh();
+      } else {
+        startTransition(() => router.refresh());
+      }
+    } catch {
+      // Revert on network error
+      setLocalTasks(tasks);
     } finally {
       setUpdating(null);
     }
@@ -55,8 +106,9 @@ export default function ChecklistPanel({ quoteId, tasks, quoteStatus, canEdit }:
       return next;
     });
 
-  const totalApplicable = tasks.flatMap(t => t.subtasks).filter(s => s.status !== 'not_applicable').length;
-  const totalDone = tasks.flatMap(t => t.subtasks).filter(s => s.status === 'done').length;
+  const allSubtasks = localTasks.flatMap(t => t.subtasks);
+  const totalApplicable = allSubtasks.filter(s => s.status !== 'not_applicable').length;
+  const totalDone = allSubtasks.filter(s => s.status === 'done').length;
   const overallProgress = totalApplicable > 0 ? Math.round((totalDone / totalApplicable) * 100) : 0;
 
   return (
@@ -72,7 +124,7 @@ export default function ChecklistPanel({ quoteId, tasks, quoteStatus, canEdit }:
       </div>
 
       {/* Task list */}
-      {tasks.map(task => {
+      {localTasks.map(task => {
         const applicableSubs = task.subtasks.filter(s => s.status !== 'not_applicable');
         const doneSubs = task.subtasks.filter(s => s.status === 'done');
         const isExpanded = expandedTasks.has(task.id);
@@ -109,12 +161,14 @@ export default function ChecklistPanel({ quoteId, tasks, quoteStatus, canEdit }:
                   <div key={sub.id}
                     className={`px-4 py-3 flex items-start gap-3 border-b border-gray-50 last:border-0
                       ${sub.status === 'not_applicable' ? 'opacity-50' : ''}`}>
+
                     {/* Checkbox */}
                     {canEdit ? (
                       <button
                         onClick={() => updateSubtask(sub.id, sub.status === 'done' ? 'pending' : 'done')}
                         disabled={sub.status === 'not_applicable' || updating === sub.id}
-                        className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 transition-colors
+                        className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 transition-colors flex items-center justify-center
+                          ${updating === sub.id ? 'opacity-50 cursor-wait' : ''}
                           ${sub.status === 'done'
                             ? 'bg-green-500 border-green-500'
                             : sub.status === 'not_applicable'
@@ -123,7 +177,7 @@ export default function ChecklistPanel({ quoteId, tasks, quoteStatus, canEdit }:
                           }`}
                       >
                         {sub.status === 'done' && (
-                          <svg className="w-3 h-3 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                           </svg>
                         )}
@@ -179,7 +233,10 @@ export default function ChecklistPanel({ quoteId, tasks, quoteStatus, canEdit }:
                     {canEdit && (
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
-                          onClick={() => { setObsOpen(obsOpen === sub.id ? null : sub.id); setObsText(sub.observations ?? ''); }}
+                          onClick={() => {
+                            setObsOpen(obsOpen === sub.id ? null : sub.id);
+                            setObsText(sub.observations ?? '');
+                          }}
                           className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
                           title="Agregar observación">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

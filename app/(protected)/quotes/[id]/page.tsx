@@ -203,6 +203,8 @@ export default function QuoteDetailPage() {
             tasks={quote.tasks ?? []}
             quoteStatus={quote.status}
             canEdit={!!canEdit}
+            onRefresh={fetchQuote}
+            currentUserName={currentUser?.name}
           />
         )}
 
