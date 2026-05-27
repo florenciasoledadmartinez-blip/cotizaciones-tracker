@@ -24,6 +24,7 @@ export default function QuotesPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<any>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [clearDemo, setClearDemo] = useState(true);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -67,11 +68,12 @@ export default function QuotesPage() {
     setImportLoading(true);
     const fd = new FormData();
     fd.append('file', importFile);
+    fd.append('clearDemo', clearDemo ? 'true' : 'false');
     const res = await fetch('/api/quotes/import', { method: 'POST', body: fd });
     const data = await res.json();
     setImportResult(data);
     setImportLoading(false);
-    if (data.imported > 0) fetchQuotes();
+    if (data.imported > 0 || data.updated > 0) fetchQuotes();
   }
 
   async function handleExport(type: string) {
@@ -203,44 +205,60 @@ export default function QuotesPage() {
       </Modal>
 
       {/* Import Modal */}
-      <Modal isOpen={showImport} onClose={() => { setShowImport(false); setImportResult(null); setImportFile(null); }}
+      <Modal isOpen={showImport} onClose={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); }}
         title="Importar cotizaciones desde Excel" size="md">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            Seleccioná el archivo <strong>Seguimiento cotizaciones.xlsx</strong>. El sistema detecta automáticamente las columnas
-            (N°, Cliente_Full, Nombre, TIPO, ESCALA, Recepción, Dead-line, Estado, Cotizó, etc.).
+            Seleccioná el archivo <strong>Seguimiento cotizaciones.xlsx</strong>. El sistema detecta automáticamente
+            las columnas N°, Cliente_Full, Nombre, TIPO, ESCALA, Recepción, Dead-line, Estado, Cotizó, Observaciones.
           </p>
+
+          {/* Clear demo checkbox */}
+          <label className="flex items-start gap-3 cursor-pointer bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <input
+              type="checkbox"
+              checked={clearDemo}
+              onChange={e => setClearDemo(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-amber-400 text-amber-600 flex-shrink-0"
+            />
+            <div>
+              <p className="text-sm font-medium text-amber-800">Borrar cotizaciones de ejemplo (COT-XXXX)</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Elimina los datos de prueba antes de importar tus cotizaciones reales.
+                No afecta cotizaciones con número puro (1000, 5965, etc.).
+              </p>
+            </div>
+          </label>
+
           <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
-            ✦ Las cotizaciones existentes se <strong>actualizan</strong> con los datos del Excel. Las nuevas se crean. Los cotizadores
-            se asignan automáticamente como usuarios si no existen (contraseña inicial: <code>cambiar123</code>).
+            ✦ Las cotizaciones ya existentes se <strong>actualizan</strong>. Las nuevas se crean con su checklist de tareas.
+            Los cotizadores se registran automáticamente como usuarios (contraseña: <code>cambiar123</code>).
           </p>
-          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
-            <input type="file" accept=".xlsx,.xls" onChange={e => setImportFile(e.target.files?.[0] ?? null)}
+
+          <div className="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center">
+            <input type="file" accept=".xlsx,.xls" onChange={e => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); }}
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
             {importFile && <p className="text-xs text-gray-500 mt-2">📄 {importFile.name} ({(importFile.size/1024).toFixed(0)} KB)</p>}
           </div>
+
           {importResult && (
             <div className={`rounded-lg p-3 text-sm ${importResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
               {importResult.error ? (
-                <p>❌ {importResult.error}</p>
+                <p className="flex items-start gap-2">❌ <span>{importResult.error}</span></p>
               ) : (
                 <>
-                  <p className="font-semibold mb-1">Resultado:</p>
-                  <p>✓ {importResult.imported} nuevas importadas</p>
+                  <p className="font-semibold mb-1.5">Importación completada:</p>
+                  <p>✓ {importResult.imported} cotizaciones nuevas</p>
                   {importResult.updated > 0 && <p>↻ {importResult.updated} actualizadas</p>}
-                  {importResult.skipped > 0 && <p className="text-yellow-700">⚠ {importResult.skipped} filas omitidas (sin datos)</p>}
-                  {importResult.errors?.length > 0 && (
-                    <div className="mt-2 text-red-700">
-                      <p className="font-medium">Errores ({importResult.errors.length}):</p>
-                      {importResult.errors.map((e: string, i: number) => <p key={i} className="text-xs">{e}</p>)}
-                    </div>
-                  )}
+                  {importResult.skipped > 0 && <p className="text-yellow-700 mt-1">⚠ {importResult.skipped} filas omitidas (sin N° o sin fecha)</p>}
+                  <p className="text-xs opacity-70 mt-1">Total procesadas: {importResult.total}</p>
                 </>
               )}
             </div>
           )}
-          <div className="flex justify-end gap-3">
-            <button onClick={() => { setShowImport(false); setImportResult(null); setImportFile(null); }} className="btn-secondary">
+
+          <div className="flex justify-end gap-3 pt-1">
+            <button onClick={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); }} className="btn-secondary">
               Cerrar
             </button>
             <button onClick={handleImport} disabled={!importFile || importLoading} className="btn-primary">
