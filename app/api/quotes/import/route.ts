@@ -145,13 +145,20 @@ export async function POST(request: NextRequest) {
       } as QuoteRow);
     }
 
-    // ── 3. Bulk upsert quotes in batches of 200 ──────────────────────────────
+    // ── 3. Deduplicate by quote_number (keep last occurrence per number) ────────
+    // PostgreSQL rejects ON CONFLICT DO UPDATE if the same target row is
+    // matched twice in the same INSERT statement.
+    const quoteMap = new Map<string, QuoteRow>();
+    for (const q of quoteRows) quoteMap.set(q.quote_number, q);
+    const dedupedRows = Array.from(quoteMap.values());
+
+    // ── 4. Bulk upsert quotes in batches of 200 ──────────────────────────────
     const BATCH = 200;
     let imported = 0, updated = 0;
     const newActiveIds: number[] = [];
 
-    for (let i = 0; i < quoteRows.length; i += BATCH) {
-      const batch = quoteRows.slice(i, i + BATCH);
+    for (let i = 0; i < dedupedRows.length; i += BATCH) {
+      const batch = dedupedRows.slice(i, i + BATCH);
 
       // Build multi-row INSERT … ON CONFLICT … DO UPDATE
       const vals: any[] = [];
@@ -240,7 +247,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ imported, updated, skipped, total: quoteRows.length });
+    return NextResponse.json({ imported, updated, skipped, total: dedupedRows.length });
 
   } catch (e: any) {
     console.error('Import error:', e);
