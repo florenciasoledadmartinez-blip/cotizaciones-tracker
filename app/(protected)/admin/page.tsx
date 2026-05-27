@@ -23,6 +23,14 @@ export default function AdminPage() {
   const [uError, setUError] = useState('');
   const [uLoading, setULoading] = useState(false);
 
+  // Reassign quotes modal
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignFrom, setReassignFrom] = useState<any>(null);   // source user object
+  const [reassignTo, setReassignTo] = useState('');              // target user id (string)
+  const [deactivateSource, setDeactivateSource] = useState(true);
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignResult, setReassignResult] = useState<any>(null);
+
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => {
       setCurrentUser(d.user);
@@ -92,6 +100,39 @@ export default function AdminPage() {
     }
   }
 
+  function openReassignModal(fromUser: any) {
+    setReassignFrom(fromUser);
+    setReassignTo('');
+    setDeactivateSource(true);
+    setReassignResult(null);
+    setShowReassignModal(true);
+  }
+
+  async function handleReassign() {
+    if (!reassignFrom || !reassignTo) return;
+    setReassignLoading(true);
+    setReassignResult(null);
+    try {
+      const res = await fetch('/api/admin/reassign-quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromUserId: reassignFrom.id,
+          toUserId: parseInt(reassignTo),
+          deactivateSource,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setReassignResult({ error: data.error }); return; }
+      setReassignResult(data);
+      loadData(); // refresh user list (quote counts change)
+    } catch (e: any) {
+      setReassignResult({ error: e.message });
+    } finally {
+      setReassignLoading(false);
+    }
+  }
+
   async function toggleTemplate(t: any) {
     await fetch('/api/task-templates', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id, active: !t.active }) });
     loadData();
@@ -132,7 +173,7 @@ export default function AdminPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['Nombre','Email','Rol','Estado','Acciones'].map(h => (
+                  {['Nombre','Email','Cotizaciones','Rol','Estado','Acciones'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -141,7 +182,13 @@ export default function AdminPage() {
                 {users.map(u => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{u.email}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold
+                        ${u.quote_count > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                        {u.quote_count ?? 0} cotiz.
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium
                         ${u.role === 'admin' || u.role === 'leader' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -155,11 +202,21 @@ export default function AdminPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <button onClick={() => openUserModal(u)} className="text-xs text-blue-600 hover:underline">Editar</button>
                         <button onClick={() => toggleUserActive(u)} className="text-xs text-gray-500 hover:text-gray-700">
                           {u.active ? 'Desactivar' : 'Activar'}
                         </button>
+                        {/* Only show reassign when this user has quotes */}
+                        {(u.quote_count ?? 0) > 0 && (
+                          <button
+                            onClick={() => openReassignModal(u)}
+                            className="text-xs text-orange-600 hover:text-orange-800 font-medium"
+                            title="Mover todas las cotizaciones de este usuario a otro"
+                          >
+                            ↔ Reasignar
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -242,6 +299,112 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* Reassign Quotes Modal */}
+      <Modal
+        isOpen={showReassignModal}
+        onClose={() => { setShowReassignModal(false); setReassignResult(null); }}
+        title="Reasignar cotizaciones"
+        size="md"
+      >
+        <div className="space-y-4">
+          {reassignFrom && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+              <p className="text-sm text-orange-800">
+                Vas a mover <strong>todas las cotizaciones de "{reassignFrom.name}"</strong>{' '}
+                ({reassignFrom.quote_count ?? 0} cotiz.) a otro usuario.
+              </p>
+              <p className="text-xs text-orange-600 mt-1">
+                Esto no elimina el usuario origen; solo reasigna sus cotizaciones.
+              </p>
+            </div>
+          )}
+
+          {!reassignResult ? (
+            <>
+              <div>
+                <label className="label">Asignar a (usuario destino)</label>
+                <select
+                  className="input"
+                  value={reassignTo}
+                  onChange={e => setReassignTo(e.target.value)}
+                >
+                  <option value="">— Seleccioná un usuario —</option>
+                  {users
+                    .filter(u => u.id !== reassignFrom?.id)
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.quote_count ?? 0} cotiz. actuales)
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={deactivateSource}
+                  onChange={e => setDeactivateSource(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 flex-shrink-0"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">
+                    Desactivar usuario "{reassignFrom?.name}" después de reasignar
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    El usuario no podrá iniciar sesión, pero sus datos se conservan.
+                  </p>
+                </div>
+              </label>
+
+              <div className="flex justify-end gap-3 pt-1">
+                <button
+                  onClick={() => { setShowReassignModal(false); setReassignResult(null); }}
+                  className="btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleReassign}
+                  disabled={!reassignTo || reassignLoading}
+                  className="btn-primary"
+                >
+                  {reassignLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Reasignando...
+                    </span>
+                  ) : '↔ Confirmar reasignación'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div>
+              {reassignResult.error ? (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+                  ❌ {reassignResult.error}
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-700">
+                  <p className="font-semibold mb-1">✅ Reasignación completada</p>
+                  <p>{reassignResult.moved} cotizaciones movidas de "{reassignResult.from}" → "{reassignResult.to}"</p>
+                  {reassignResult.deactivated && (
+                    <p className="mt-1 text-green-600">Usuario "{reassignResult.from}" desactivado.</p>
+                  )}
+                </div>
+              )}
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => { setShowReassignModal(false); setReassignResult(null); }}
+                  className="btn-primary"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* User Modal */}
       <Modal isOpen={showUserModal} onClose={() => setShowUserModal(false)}

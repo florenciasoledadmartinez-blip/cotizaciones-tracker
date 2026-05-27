@@ -462,7 +462,15 @@ export async function getDashboardStats(): Promise<any> {
 }
 
 export async function getAllUsers(): Promise<any[]> {
-  return qAll('SELECT id, name, email, role, active, created_at FROM users ORDER BY name');
+  return qAll(`
+    SELECT
+      u.id, u.name, u.email, u.role, u.active, u.created_at,
+      COUNT(q.id)::int AS quote_count
+    FROM users u
+    LEFT JOIN quotes q ON q.assigned_user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.name
+  `);
 }
 
 export async function getTaskTemplates(): Promise<any[]> {
