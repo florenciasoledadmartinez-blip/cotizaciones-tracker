@@ -1,8 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import QuoteTable from '@/components/quotes/QuoteTable';
-import QuoteForm from '@/components/quotes/QuoteForm';
 import Modal from '@/components/ui/Modal';
 import { STATUS_LABELS } from '@/lib/utils';
 
@@ -13,13 +11,9 @@ const PRIORITIES = ['low','medium','high','urgent'];
 const PRIORITY_LABELS: Record<string,string> = { low:'Baja', medium:'Media', high:'Alta', urgent:'Urgente' };
 
 export default function QuotesPage() {
-  const router = useRouter();
   const [quotes, setQuotes] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingQuote, setEditingQuote] = useState<any>(null);
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<any>(null);
@@ -36,7 +30,6 @@ export default function QuotesPage() {
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => setCurrentUser(d.user));
-    fetch('/api/users').then(r => r.json()).then(d => setUsers((d.users ?? []).filter((u:any) => u.role === 'operator')));
   }, []);
 
   const fetchQuotes = useCallback(async () => {
@@ -121,9 +114,6 @@ export default function QuotesPage() {
                   ))}
                 </div>
               </div>
-              <button onClick={() => { setEditingQuote(null); setShowForm(true); }} className="btn-primary btn-sm">
-                + Nueva cotización
-              </button>
             </>
           )}
         </div>
@@ -187,22 +177,10 @@ export default function QuotesPage() {
           <QuoteTable
             quotes={tabQuotes}
             canEdit={canEdit}
-            onEdit={q => { setEditingQuote(q); setShowForm(true); }}
             onDelete={handleDelete}
           />
         )}
       </div>
-
-      {/* Create / Edit Modal */}
-      <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditingQuote(null); }}
-        title={editingQuote ? 'Editar cotización' : 'Nueva cotización'} size="lg">
-        <QuoteForm
-          users={users}
-          initialData={editingQuote}
-          onSuccess={() => { setShowForm(false); setEditingQuote(null); fetchQuotes(); }}
-          onCancel={() => { setShowForm(false); setEditingQuote(null); }}
-        />
-      </Modal>
 
       {/* Import Modal */}
       <Modal isOpen={showImport} onClose={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); }}

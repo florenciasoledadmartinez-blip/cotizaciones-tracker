@@ -228,9 +228,9 @@ export async function POST(request: NextRequest) {
       updated += batch.length;
     }
 
-    // ── 4. Bulk generate tasks ONLY for newly inserted active quotes ─────────
+    // ── 4. Bulk generate tasks for newly inserted active quotes ──────────────
+    // Uses batches to stay under PostgreSQL's 65535-parameter limit
     if (newActiveIds.length > 0) {
-      // Fetch templates once
       const taskTemplates: any[] = await qAll(
         'SELECT id, order_index FROM task_templates WHERE active=1 ORDER BY order_index'
       );
@@ -238,38 +238,50 @@ export async function POST(request: NextRequest) {
         'SELECT id, task_template_id, order_index FROM subtask_templates WHERE active=1 ORDER BY order_index'
       );
 
-      // Bulk insert quote_tasks
-      const taskVals: any[] = [];
-      const taskPlaceholders: string[] = [];
-      let p = 1;
-      for (const qid of newActiveIds) {
-        for (const tt of taskTemplates) {
-          taskPlaceholders.push(`($${p++},$${p++},'pending',0,$${p++})`);
-          taskVals.push(qid, tt.id, tt.order_index);
-        }
-      }
-      const insertedTasks: any[] = await qAll(`
-        INSERT INTO quote_tasks (quote_id,task_template_id,status,progress_percentage,order_index)
-        VALUES ${taskPlaceholders.join(',')}
-        RETURNING id, quote_id, task_template_id
-      `, taskVals);
+      // Collect all (quoteId, taskTemplateId, orderIndex) rows
+      type TaskRow = { quoteId: number; tmplId: number; orderIdx: number };
+      const allTaskRows: TaskRow[] = [];
+      for (const qid of newActiveIds)
+        for (const tt of taskTemplates)
+          allTaskRows.push({ quoteId: qid, tmplId: tt.id, orderIdx: tt.order_index });
 
-      // Bulk insert quote_subtasks
-      const subVals: any[] = [];
-      const subPlaceholders: string[] = [];
-      p = 1;
-      for (const qt of insertedTasks) {
-        const subs = subtaskTemplates.filter(s => s.task_template_id === qt.task_template_id);
-        for (const st of subs) {
-          subPlaceholders.push(`($${p++},$${p++},$${p++},'pending')`);
-          subVals.push(qt.quote_id, qt.id, st.id);
-        }
+      // Insert quote_tasks in batches of 500 rows (1500 params each — well under 65535)
+      const TASK_BATCH = 500;
+      const insertedTasks: any[] = [];
+      for (let i = 0; i < allTaskRows.length; i += TASK_BATCH) {
+        const batch = allTaskRows.slice(i, i + TASK_BATCH);
+        let p = 1;
+        const phs = batch.map(r => { const s = `($${p++},$${p++},'pending',0,$${p++})`; return s; });
+        const vals: any[] = [];
+        for (const r of batch) vals.push(r.quoteId, r.tmplId, r.orderIdx);
+        const res: any[] = await qAll(`
+          INSERT INTO quote_tasks (quote_id,task_template_id,status,progress_percentage,order_index)
+          VALUES ${phs.join(',')} RETURNING id, quote_id, task_template_id
+        `, vals);
+        insertedTasks.push(...res);
       }
-      if (subPlaceholders.length > 0) {
+
+      // Collect all subtask rows
+      type SubRow = { quoteId: number; taskId: number; stId: number };
+      const allSubRows: SubRow[] = [];
+      for (const qt of insertedTasks) {
+        const subs = subtaskTemplates.filter((s: any) => s.task_template_id === qt.task_template_id);
+        for (const st of subs)
+          allSubRows.push({ quoteId: qt.quote_id, taskId: qt.id, stId: st.id });
+      }
+
+      // Insert quote_subtasks in batches of 400 rows (1200 params each — well under 65535)
+      const SUB_BATCH = 400;
+      for (let i = 0; i < allSubRows.length; i += SUB_BATCH) {
+        const batch = allSubRows.slice(i, i + SUB_BATCH);
+        let p = 1;
+        const phs = batch.map(() => `($${p++},$${p++},$${p++},'pending')`);
+        const vals: any[] = [];
+        for (const r of batch) vals.push(r.quoteId, r.taskId, r.stId);
         await qRun(`
           INSERT INTO quote_subtasks (quote_id,quote_task_id,subtask_template_id,status)
-          VALUES ${subPlaceholders.join(',')}
-        `, subVals);
+          VALUES ${phs.join(',')}
+        `, vals);
       }
     }
 
