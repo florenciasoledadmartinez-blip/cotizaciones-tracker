@@ -145,22 +145,27 @@ export async function POST(request: NextRequest) {
       } as QuoteRow);
     }
 
-    // ── 3. Deduplicate by quote_number (keep last occurrence per number) ────────
-    // PostgreSQL rejects ON CONFLICT DO UPDATE if the same target row is
-    // matched twice in the same INSERT statement.
+    // ── 3. Deduplicate by quote_number (keep last occurrence) ────────────────
     const quoteMap = new Map<string, QuoteRow>();
     for (const q of quoteRows) quoteMap.set(q.quote_number, q);
     const dedupedRows = Array.from(quoteMap.values());
 
-    // ── 4. Bulk upsert quotes in batches of 200 ──────────────────────────────
-    const BATCH = 200;
+    // ── 4. Split into INSERT (new) vs UPDATE (existing) ───────────────────────
+    // Avoid ON CONFLICT entirely — it fails when the Excel has duplicate N°
+    const existingRecs: { id: number; quote_number: string }[] =
+      await qAll('SELECT id, quote_number FROM quotes');
+    const existingNums = new Set<string>(existingRecs.map((r: any) => r.quote_number));
+
+    const toInsert = dedupedRows.filter(q => !existingNums.has(q.quote_number));
+    const toUpdate = dedupedRows.filter(q =>  existingNums.has(q.quote_number));
+
     let imported = 0, updated = 0;
     const newActiveIds: number[] = [];
 
-    for (let i = 0; i < dedupedRows.length; i += BATCH) {
-      const batch = dedupedRows.slice(i, i + BATCH);
-
-      // Build multi-row INSERT … ON CONFLICT … DO UPDATE
+    // ── 4a. Batch INSERT new quotes (no conflict possible) ────────────────────
+    const BATCH = 100;
+    for (let i = 0; i < toInsert.length; i += BATCH) {
+      const batch = toInsert.slice(i, i + BATCH);
       const vals: any[] = [];
       const placeholders = batch.map((q, j) => {
         const base = j * 11;
@@ -171,35 +176,56 @@ export async function POST(request: NextRequest) {
         );
         return `($${base+1},$${base+2},$${base+3},$${base+4},$${base+5},$${base+6},$${base+7},$${base+8},$${base+9},$${base+10},$${base+11},${user.userId})`;
       });
-
       const res: any[] = await qAll(`
         INSERT INTO quotes
           (quote_number,client_name,description,quote_type,received_date,deadline_date,
            actual_send_date,assigned_user_id,status,priority,observations,created_by)
         VALUES ${placeholders.join(',')}
-        ON CONFLICT (quote_number) DO UPDATE SET
-          client_name      = EXCLUDED.client_name,
-          description      = EXCLUDED.description,
-          quote_type       = EXCLUDED.quote_type,
-          received_date    = EXCLUDED.received_date,
-          deadline_date    = EXCLUDED.deadline_date,
-          actual_send_date = EXCLUDED.actual_send_date,
-          assigned_user_id = COALESCE(EXCLUDED.assigned_user_id, quotes.assigned_user_id),
-          status           = EXCLUDED.status,
-          priority         = EXCLUDED.priority,
-          observations     = COALESCE(EXCLUDED.observations, quotes.observations),
-          updated_at       = NOW()
-        RETURNING id, status, (xmax = 0) AS is_new
+        RETURNING id, status
       `, vals);
-
       for (const r of res) {
-        if (r.is_new) {
-          imported++;
-          if (ACTIVE_STATUSES.has(r.status)) newActiveIds.push(r.id);
-        } else {
-          updated++;
-        }
+        imported++;
+        if (ACTIVE_STATUSES.has(r.status)) newActiveIds.push(r.id);
       }
+    }
+
+    // ── 4b. Batch UPDATE existing quotes (UPDATE … FROM VALUES, no conflict) ──
+    for (let i = 0; i < toUpdate.length; i += BATCH) {
+      const batch = toUpdate.slice(i, i + BATCH);
+      const vals: any[] = [];
+      const rows = batch.map((q, j) => {
+        const base = j * 11;
+        vals.push(
+          q.quote_number, q.client_name, q.description, q.quote_type,
+          q.received_date, q.deadline_date, q.actual_send_date,
+          q.assigned_user_id, q.status, q.priority, q.observations
+        );
+        // Cast types explicitly so PostgreSQL handles NULLs correctly
+        return `($${base+1}::text,$${base+2}::text,$${base+3}::text,$${base+4}::text,`+
+               `$${base+5}::date,$${base+6}::date,$${base+7}::date,`+
+               `$${base+8}::integer,$${base+9}::text,$${base+10}::text,$${base+11}::text)`;
+      });
+      await qRun(`
+        UPDATE quotes SET
+          client_name      = v.client_name,
+          description      = v.description,
+          quote_type       = v.quote_type,
+          received_date    = v.received_date,
+          deadline_date    = v.deadline_date,
+          actual_send_date = v.actual_send_date,
+          assigned_user_id = COALESCE(v.assigned_user_id, quotes.assigned_user_id),
+          status           = v.status,
+          priority         = v.priority,
+          observations     = COALESCE(v.observations, quotes.observations),
+          updated_at       = NOW()
+        FROM (VALUES ${rows.join(',')}) AS v(
+          quote_number,client_name,description,quote_type,
+          received_date,deadline_date,actual_send_date,
+          assigned_user_id,status,priority,observations
+        )
+        WHERE quotes.quote_number = v.quote_number
+      `, vals);
+      updated += batch.length;
     }
 
     // ── 4. Bulk generate tasks ONLY for newly inserted active quotes ─────────
