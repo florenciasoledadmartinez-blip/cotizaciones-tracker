@@ -19,6 +19,7 @@ export default function QuotesPage() {
   const [importResult, setImportResult] = useState<any>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [clearDemo, setClearDemo] = useState(true);
+  const [replaceAll, setReplaceAll] = useState(false);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -62,6 +63,7 @@ export default function QuotesPage() {
     const fd = new FormData();
     fd.append('file', importFile);
     fd.append('clearDemo', clearDemo ? 'true' : 'false');
+    fd.append('replaceAll', replaceAll ? 'true' : 'false');
     const res = await fetch('/api/quotes/import', { method: 'POST', body: fd });
     const data = await res.json();
     setImportResult(data);
@@ -183,35 +185,58 @@ export default function QuotesPage() {
       </div>
 
       {/* Import Modal */}
-      <Modal isOpen={showImport} onClose={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); }}
+      <Modal isOpen={showImport} onClose={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); setReplaceAll(false); }}
         title="Importar cotizaciones desde Excel" size="md">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            Seleccioná el archivo <strong>Seguimiento cotizaciones.xlsx</strong>. El sistema detecta automáticamente
+            Seleccioná el archivo Excel. El sistema detecta automáticamente
             las columnas N°, Cliente_Full, Nombre, TIPO, ESCALA, Recepción, Dead-line, Estado, Cotizó, Observaciones.
           </p>
 
-          {/* Clear demo checkbox */}
-          <label className="flex items-start gap-3 cursor-pointer bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          {/* REPLACE ALL — principal option */}
+          <label className={`flex items-start gap-3 cursor-pointer rounded-lg px-4 py-3 border-2 transition-colors
+            ${replaceAll ? 'bg-red-50 border-red-400' : 'bg-gray-50 border-gray-200 hover:border-red-200'}`}>
             <input
               type="checkbox"
-              checked={clearDemo}
-              onChange={e => setClearDemo(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-amber-400 text-amber-600 flex-shrink-0"
+              checked={replaceAll}
+              onChange={e => { setReplaceAll(e.target.checked); if (e.target.checked) setClearDemo(false); }}
+              className="mt-0.5 w-4 h-4 rounded border-red-400 text-red-600 flex-shrink-0"
             />
             <div>
-              <p className="text-sm font-medium text-amber-800">Borrar cotizaciones de ejemplo (COT-XXXX)</p>
-              <p className="text-xs text-amber-600 mt-0.5">
-                Elimina los datos de prueba antes de importar tus cotizaciones reales.
-                No afecta cotizaciones con número puro (1000, 5965, etc.).
+              <p className={`text-sm font-semibold ${replaceAll ? 'text-red-700' : 'text-gray-700'}`}>
+                🗑 Reemplazar todo — borrar la base completa e importar solo este archivo
+              </p>
+              <p className={`text-xs mt-0.5 ${replaceAll ? 'text-red-600' : 'text-gray-400'}`}>
+                Elimina <strong>todas</strong> las cotizaciones existentes (incluido su checklist y avance) y carga
+                únicamente los datos del archivo nuevo. Usá esto cuando el archivo es la fuente definitiva.
               </p>
             </div>
           </label>
 
-          <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
-            ✦ Las cotizaciones ya existentes se <strong>actualizan</strong>. Las nuevas se crean con su checklist de tareas.
-            Los cotizadores se registran automáticamente como usuarios (contraseña: <code>cambiar123</code>).
-          </p>
+          {/* Clear demo — solo si no está en modo reemplazar todo */}
+          {!replaceAll && (
+            <label className="flex items-start gap-3 cursor-pointer bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+              <input
+                type="checkbox"
+                checked={clearDemo}
+                onChange={e => setClearDemo(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-amber-400 text-amber-600 flex-shrink-0"
+              />
+              <div>
+                <p className="text-sm font-medium text-amber-800">Borrar solo cotizaciones de ejemplo (COT-XXXX)</p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Elimina datos de prueba. No afecta cotizaciones con número real (1000, 5965, etc.).
+                </p>
+              </div>
+            </label>
+          )}
+
+          {!replaceAll && (
+            <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
+              ✦ Las cotizaciones ya existentes se <strong>actualizan</strong>. Las nuevas se crean con su checklist de tareas.
+              Los cotizadores se registran automáticamente como usuarios (contraseña: <code>cambiar123</code>).
+            </p>
+          )}
 
           <div className="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center">
             <input type="file" accept=".xlsx,.xls" onChange={e => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); }}
@@ -226,6 +251,7 @@ export default function QuotesPage() {
               ) : (
                 <>
                   <p className="font-semibold mb-1.5">Importación completada:</p>
+                  {importResult.deleted > 0 && <p className="text-red-600">🗑 {importResult.deleted} cotizaciones anteriores eliminadas</p>}
                   <p>✓ {importResult.imported} cotizaciones nuevas</p>
                   {importResult.updated > 0 && <p>↻ {importResult.updated} actualizadas</p>}
                   {importResult.skipped > 0 && <p className="text-yellow-700 mt-1">⚠ {importResult.skipped} filas omitidas (sin N° o sin fecha)</p>}
@@ -236,7 +262,7 @@ export default function QuotesPage() {
           )}
 
           <div className="flex justify-end gap-3 pt-1">
-            <button onClick={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); }} className="btn-secondary">
+            <button onClick={() => { setShowImport(false); setImportResult(null); setImportFile(null); setClearDemo(true); setReplaceAll(false); }} className="btn-secondary">
               Cerrar
             </button>
             <button onClick={handleImport} disabled={!importFile || importLoading} className="btn-primary">

@@ -13,14 +13,25 @@ export async function POST(request: NextRequest) {
 
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const clearDemo = formData.get('clearDemo') === 'true';
+    const file       = formData.get('file') as File;
+    const clearDemo  = formData.get('clearDemo') === 'true';
+    const replaceAll = formData.get('replaceAll') === 'true';
 
     if (!file) return NextResponse.json({ error: 'Archivo requerido' }, { status: 400 });
 
-    // ── Optional: delete demo quotes (COT-XXXX format) ──────────────────────
-    if (clearDemo) {
-      // Delete dependent records first (activity_log and ai_insights lack ON DELETE CASCADE)
+    let deleted = 0;
+
+    // ── Option A: wipe everything and start fresh ────────────────────────────
+    if (replaceAll) {
+      const countRow = await qAll('SELECT COUNT(*)::int AS n FROM quotes');
+      deleted = countRow[0]?.n ?? 0;
+      // activity_log and ai_insights have no ON DELETE CASCADE → delete first
+      await qRun('DELETE FROM activity_log');
+      await qRun('DELETE FROM ai_insights');
+      await qRun('DELETE FROM quotes'); // quote_tasks + quote_subtasks cascade
+    }
+    // ── Option B: delete only demo quotes (COT-XXXX format) ─────────────────
+    else if (clearDemo) {
       await qRun(`
         DELETE FROM activity_log WHERE quote_id IN (
           SELECT id FROM quotes WHERE quote_number LIKE 'COT-%'
@@ -285,7 +296,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ imported, updated, skipped, total: dedupedRows.length });
+    return NextResponse.json({ imported, updated, skipped, deleted, total: dedupedRows.length });
 
   } catch (e: any) {
     console.error('Import error:', e);
