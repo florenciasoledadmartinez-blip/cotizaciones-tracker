@@ -130,19 +130,30 @@ export async function POST(request: NextRequest) {
     }
     const quoteRows: QuoteRow[] = [];
     let skipped = 0;
+    const skipReasons: { noNumber: number; noClient: number; noDate: number } =
+      { noNumber: 0, noClient: 0, noDate: 0 };
 
     for (const row of rows) {
-      const num = row['N°'];
-      if (!num || typeof num !== 'number') { skipped++; continue; }
+      // Accept N° as number OR text (e.g. "5965" stored as string in Excel)
+      const numRaw = row['N°'];
+      const numVal = typeof numRaw === 'number'
+        ? numRaw
+        : parseFloat(String(numRaw || '').trim());
+      if (!numRaw || isNaN(numVal) || numVal <= 0) {
+        skipped++; skipReasons.noNumber++; continue;
+      }
+
       const clientName = String(row['Cliente_Full'] || '').trim();
+      if (!clientName) { skipped++; skipReasons.noClient++; continue; }
+
       const receivedDate = parseDate(row['Recepción']);
-      if (!clientName || !receivedDate) { skipped++; continue; }
+      if (!receivedDate) { skipped++; skipReasons.noDate++; continue; }
 
       const deadlineDate = parseDate(row['Dead-line']) || addDays(receivedDate, 30);
       const cotizadoRaw = String(row['Cotizó'] || row['RespEstado'] || '').trim();
 
       quoteRows.push({
-        quote_number:     String(Math.round(num)),
+        quote_number:     String(Math.round(numVal)),
         client_name:      clientName,
         description:      String(row['Nombre'] || '').trim() || null,
         quote_type:       String(row['TIPO'] || '').trim() || null,
@@ -296,7 +307,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ imported, updated, skipped, deleted, total: dedupedRows.length });
+    const deduplicated = quoteRows.length - dedupedRows.length;
+    return NextResponse.json({
+      imported, updated, skipped, deleted,
+      total: dedupedRows.length,
+      deduplicated,
+      skipReasons,
+    });
 
   } catch (e: any) {
     console.error('Import error:', e);

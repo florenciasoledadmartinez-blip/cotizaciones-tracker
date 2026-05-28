@@ -254,7 +254,21 @@ export default function QuotesPage() {
                   {importResult.deleted > 0 && <p className="text-red-600">🗑 {importResult.deleted} cotizaciones anteriores eliminadas</p>}
                   <p>✓ {importResult.imported} cotizaciones nuevas</p>
                   {importResult.updated > 0 && <p>↻ {importResult.updated} actualizadas</p>}
-                  {importResult.skipped > 0 && <p className="text-yellow-700 mt-1">⚠ {importResult.skipped} filas omitidas (sin N° o sin fecha)</p>}
+                  {importResult.deduplicated > 0 && <p className="text-blue-700">⊞ {importResult.deduplicated} filas duplicadas (se conservó la última)</p>}
+                  {importResult.skipped > 0 && (
+                    <div className="text-yellow-700 mt-1 space-y-0.5">
+                      <p>⚠ {importResult.skipped} filas omitidas:</p>
+                      {importResult.skipReasons?.noNumber > 0 && (
+                        <p className="pl-3 text-xs">• {importResult.skipReasons.noNumber} sin N° válido</p>
+                      )}
+                      {importResult.skipReasons?.noClient > 0 && (
+                        <p className="pl-3 text-xs">• {importResult.skipReasons.noClient} sin cliente</p>
+                      )}
+                      {importResult.skipReasons?.noDate > 0 && (
+                        <p className="pl-3 text-xs">• {importResult.skipReasons.noDate} sin fecha de recepción</p>
+                      )}
+                    </div>
+                  )}
                   <p className="text-xs opacity-70 mt-1">Total procesadas: {importResult.total}</p>
                 </>
               )}
