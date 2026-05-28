@@ -316,9 +316,19 @@ function addDays(dateStr: string, days: number) {
   const d = new Date(dateStr); d.setDate(d.getDate() + days); return d.toISOString().split('T')[0];
 }
 
+/**
+ * Maps the Excel ESCALA column to priority:
+ *   CHICA   → low    (Baja)
+ *   MEDIANA → medium (Media)   ← default for anything not CHICA or GRANDE
+ *   GRANDE  → high   (Alta)
+ *   URGENTE → urgent (Urgente)
+ */
 function mapEscala(v: any) {
   const s = String(v || '').toUpperCase().trim();
-  return s === 'CHICA' ? 'low' : s === 'GRANDE' ? 'high' : 'medium';
+  if (s === 'CHICA')   return 'low';
+  if (s === 'GRANDE')  return 'high';
+  if (s === 'URGENTE') return 'urgent';
+  return 'medium'; // MEDIANA or empty → medium
 }
 
 function mapStatus(init: any, mid: any, fin: any, sent: string | null): string {

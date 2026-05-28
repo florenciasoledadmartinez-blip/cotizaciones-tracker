@@ -20,6 +20,21 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const prev = await qOne('SELECT * FROM quote_subtasks WHERE id=$1 AND quote_id=$2', [subtask_id, quoteId]);
   if (!prev) return NextResponse.json({ error: 'Subtarea no encontrada' }, { status: 404 });
 
+  // "Validación interna" subtasks are restricted to leader/admin only
+  const taskInfo = await qOne(`
+    SELECT tt.name AS task_name
+    FROM quote_subtasks qs
+    JOIN quote_tasks qt ON qs.quote_task_id = qt.id
+    JOIN task_templates tt ON qt.task_template_id = tt.id
+    WHERE qs.id = $1
+  `, [subtask_id]);
+
+  if (taskInfo?.task_name === 'Validación interna' && user.role === 'operator')
+    return NextResponse.json(
+      { error: 'La etapa "Validación interna" solo puede modificarla el líder o administrador.' },
+      { status: 403 }
+    );
+
   await qRun(`
     UPDATE quote_subtasks
     SET status=$1,

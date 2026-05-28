@@ -241,6 +241,7 @@ export default function QuoteDetailPage() {
               canEdit={canEdit}
               onRefresh={fetchQuote}
               currentUserName={currentUser?.name}
+              currentUserRole={currentUser?.role}
             />
           );
         })()}
