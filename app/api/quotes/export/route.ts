@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN q.status='sent' THEN 1 ELSE 0 END)::int as Enviadas,
         ROUND(AVG(q.progress_percentage)::numeric,1) as "Avance Promedio %"
       FROM users u LEFT JOIN quotes q ON q.assigned_user_id=u.id
-      WHERE u.role='operator' AND u.active=1 GROUP BY u.id,u.name ORDER BY u.name
+      WHERE u.role='operator' AND u.active=1
+      GROUP BY u.id,u.name HAVING COUNT(q.id) > 0 ORDER BY u.name
     `);
   } else if (type === 'expired') {
     sheetName = 'Vencidas';
